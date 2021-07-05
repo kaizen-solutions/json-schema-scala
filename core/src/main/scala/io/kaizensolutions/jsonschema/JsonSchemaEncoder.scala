@@ -75,56 +75,62 @@ object JsonSchemaEncoder {
   type Typeclass[T] = JsonSchemaEncoder[T]
 
   def combine[T](caseClass: CaseClass[Typeclass, T]): Typeclass[T] = new Typeclass[T] {
-    override def encode: JsonSchemaDocument = {
-      val primitives: Seq[Labelled] =
-        caseClass.parameters.collect {
-          case param if param.typeclass.encode.isPrimitive =>
-            val description = getDescription(param.annotations)
-            val title       = getTitle(param.annotations)
-            val key         = param.label
-            val tcInstance  = param.typeclass
-            Labelled(key, tcInstance.encode.copy(description = description, title = title))
-        }
+    override def encode: JsonSchemaDocument =
+      if (caseClass.isObject) {
+        JsonSchemaDocument(
+          id = caseClass.typeName.full,
+          schema = JsonSchema.Obj.CaseObj(Set(caseClass.typeName.short))
+        )
+      } else {
+        val primitives: Seq[Labelled] =
+          caseClass.parameters.collect {
+            case param if param.typeclass.encode.isPrimitive =>
+              val description = getDescription(param.annotations)
+              val title       = getTitle(param.annotations)
+              val key         = param.label
+              val tcInstance  = param.typeclass
+              Labelled(key, tcInstance.encode.copy(description = description, title = title))
+          }
 
-      // converted nested objects to references
-      val references =
-        caseClass.parameters.collect {
-          case param if param.typeclass.encode.isObject =>
-            val key        = param.label
-            val tcInstance = param.typeclass
-            Labelled(
-              key,
-              JsonSchemaDocument(
-                schema = JsonSchema.Reference(tcInstance.encode.id),
-                id = tcInstance.encode.id
+        // converted nested objects to references
+        val references =
+          caseClass.parameters.collect {
+            case param if param.typeclass.encode.isObject =>
+              val key        = param.label
+              val tcInstance = param.typeclass
+              Labelled(
+                key,
+                JsonSchemaDocument(
+                  schema = JsonSchema.Reference(tcInstance.encode.id),
+                  id = tcInstance.encode.id
+                )
               )
-            )
-        }
+          }
 
-      // pull definitions inside nested objects into the top level (this will happen recursively)
-      val definitions =
-        caseClass.parameters.collect {
-          case param if param.typeclass.encode.isObject =>
-            val tc = param.typeclass
-            val id = tc.encode.id
-            tc.encode.definitions +                                 // nested object definitions
-              Labelled(id, tc.encode.copy(definitions = Set.empty)) // nested object minus its old definitions
-        }.flatten.toSet
+        // pull definitions inside nested objects into the top level (this will happen recursively)
+        val definitions =
+          caseClass.parameters.collect {
+            case param if param.typeclass.encode.isObject =>
+              val tc = param.typeclass
+              val id = tc.encode.id
+              tc.encode.definitions +                                 // nested object definitions
+                Labelled(id, tc.encode.copy(definitions = Set.empty)) // nested object minus its old definitions
+          }.flatten.toSet
 
-      val required =
-        caseClass.parameters.collect {
-          case param if param.typeclass.encode.required =>
-            param.label
-        }
+        val required =
+          caseClass.parameters.collect {
+            case param if param.typeclass.encode.required =>
+              param.label
+          }
 
-      JsonSchemaDocument(
-        id = caseClass.typeName.full,
-        schema = JsonSchema.Obj.Product(primitives ++ references, requiredKeys = required),
-        title = getTitle(caseClass.annotations),
-        description = getDescription(caseClass.annotations),
-        definitions = definitions
-      )
-    }
+        JsonSchemaDocument(
+          id = caseClass.typeName.full,
+          schema = JsonSchema.Obj.Product(primitives ++ references, requiredKeys = required),
+          title = getTitle(caseClass.annotations),
+          description = getDescription(caseClass.annotations),
+          definitions = definitions
+        )
+      }
 
     private def getTitle(in: Seq[Any]): Option[String] =
       in.collectFirst {
@@ -138,15 +144,26 @@ object JsonSchemaEncoder {
   }
 
   def dispatch[T](sealedTrait: SealedTrait[Typeclass, T]): Typeclass[T] = new Typeclass[T] {
-    override def encode: JsonSchemaDocument = {
-      val terms =
-        sealedTrait.subtypes.map { term =>
+    def aggregatedCaseObjects: Seq[JsonSchemaDocument] =
+      sealedTrait.subtypes
+        .map(_.typeclass.encode.schema)
+        .collect { case c @ JsonSchema.Obj.CaseObj(_) => c }
+        .reduceOption(_ ++ _)
+        .map(cObj => JsonSchemaDocument(id = sealedTrait.typeName.full, schema = cObj))
+        .toSeq
+
+    def nonCaseObjects: Seq[JsonSchemaDocument] =
+      sealedTrait.subtypes
+        .filterNot(_.typeclass.encode.isCaseObject)
+        .map { term =>
           val tc = term.typeclass
           JsonSchemaDocument(
             id = term.typeName.full,
             schema = tc.encode.schema
           )
         }
+
+    override def encode: JsonSchemaDocument = {
       val definitions =
         sealedTrait.subtypes.flatMap { term =>
           term.typeclass.encode.definitions
@@ -154,7 +171,7 @@ object JsonSchemaEncoder {
 
       JsonSchemaDocument(
         id = sealedTrait.typeName.full,
-        schema = JsonSchema.Obj.Sum(terms),
+        schema = JsonSchema.Obj.Sum(nonCaseObjects ++ aggregatedCaseObjects),
         definitions = definitions
       )
     }

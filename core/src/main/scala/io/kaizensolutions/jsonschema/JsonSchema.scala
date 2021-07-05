@@ -31,10 +31,14 @@ final case class JsonSchemaDocument(
     case _                       => false
   }
 
-  def isObject: Boolean = schema match {
-    case _: JsonSchema.Obj.Sum     => true
-    case _: JsonSchema.Obj.Product => true
+  def isCaseObject: Boolean = schema match {
+    case _: JsonSchema.Obj.CaseObj => true
     case _                         => false
+  }
+
+  def isObject: Boolean = schema match {
+    case _: JsonSchema.Obj => true
+    case _                 => false
   }
 
   // Use Optics library instead?
@@ -49,7 +53,7 @@ final case class JsonSchemaDocument(
   def transformDown(pf: PartialFunction[JsonSchema, JsonSchema]): JsonSchemaDocument = {
     val top: JsonSchema = if (pf.isDefinedAt(schema)) pf(schema) else schema
     val res = top match {
-      case p @ (JsonSchema.Primitive(_) | JsonSchema.Reference(_) | JsonSchema.Null) =>
+      case p @ (JsonSchema.Primitive(_) | JsonSchema.Reference(_) | JsonSchema.Null | JsonSchema.Obj.CaseObj(_)) =>
         p
 
       case JsonSchema.Obj.Product(properties, requiredKeys, additionalProperties) =>
@@ -124,14 +128,18 @@ object JsonSchema {
   type Null = Null.type
   final case object Null extends JsonSchema
 
-  sealed trait Obj
+  sealed trait Obj extends JsonSchema
   object Obj {
+    final case class CaseObj(allowedValues: Set[String]) extends Obj {
+      def ++(that: CaseObj): CaseObj = copy(allowedValues ++ that.allowedValues)
+    }
+
     final case class Product(
       properties: Seq[Labelled],
       requiredKeys: Seq[String],
       additionalProperties: Boolean = true
-    )                                                    extends JsonSchema
-    final case class Sum(terms: Seq[JsonSchemaDocument]) extends JsonSchema
+    )                                                    extends Obj
+    final case class Sum(terms: Seq[JsonSchemaDocument]) extends Obj
   }
 
   final case class Arr(itemsRep: JsonSchemaDocument) extends JsonSchema

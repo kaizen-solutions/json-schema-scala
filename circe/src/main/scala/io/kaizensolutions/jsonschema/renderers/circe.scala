@@ -40,6 +40,8 @@ object circe {
 
     case s @ JsonSchema.Obj.Sum(_) => renderSum(s)
 
+    case c @ JsonSchema.Obj.CaseObj(_) => renderCaseObj(c)
+
     case a @ JsonSchema.Arr(_) => renderArr(a)
   }
 
@@ -71,6 +73,12 @@ object circe {
           .map(payload => render(payload, topLevel = false))
           .map(Json.fromFields)
       )
+    )
+
+  private def renderCaseObj(in: JsonSchema.Obj.CaseObj): Seq[(String, Json)] =
+    List(
+      "type" := "string",
+      "enum" := in.allowedValues
     )
 
   private def renderArr(in: JsonSchema.Arr): Seq[(String, Json)] =
