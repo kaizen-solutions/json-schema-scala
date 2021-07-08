@@ -68,7 +68,7 @@ final case class JsonSchemaDocument(
     val top: JsonSchema = if (pf.isDefinedAt(schema)) pf(schema) else schema
     val res = top match {
       case terminalCase @ (
-            JsonSchema.Primitive.Bool | JsonSchema.Primitive.Null | JsonSchema.Primitive.Str(_) |
+            JsonSchema.Primitive.Bool | JsonSchema.Primitive.Null | JsonSchema.Primitive.Str(_, _) |
             JsonSchema.Primitive.Numeric(_, _, _) | JsonSchema.Reference(_) | JsonSchema.Obj.CaseObj(_, _)
           ) =>
         terminalCase

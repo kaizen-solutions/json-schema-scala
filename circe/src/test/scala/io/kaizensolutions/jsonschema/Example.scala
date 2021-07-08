@@ -11,8 +11,8 @@ import io.kaizensolutions.jsonschema.renderers.circe._
 
 @title("A representation of a Person")
 final case class Person(
-  @description("age of the person in years") age: Option[Int],
-  @description("full name of the person") name: String,
+  @description("age of the person in years") @exclusiveMinimum(0) @minimum(1) @maximum(200) age: Option[Int],
+  @description("full name of the person") @minimumLength(0) @maximumLength(150) name: String,
   device: Device
 )
 
@@ -26,8 +26,7 @@ object Device {
   private final case class Cluster(groupId: Int, reading: Reading) extends Device
 
   def cluster(groupId: Int, reading: Reading): Device = Cluster(groupId, reading)
-
-  def simple(id: Int, reading: Reading): Device = Simple(id, reading)
+  def simple(id: Int, reading: Reading): Device       = Simple(id, reading)
 
   implicit val deviceCodec: Codec[Device] = {
     implicit val configuration: Configuration =
@@ -43,9 +42,10 @@ object Example {
   def main(args: Array[String]): Unit = {
     println {
       JsonSchemaEncoder[Person].encode
-//        .withAdditionalPropertiesNested(false)
-//        .withDiscriminator("scalaType")
-        .toJson.spaces2
+        .withAdditionalPropertiesNested(false)
+        .withDiscriminator("scalaType")
+        .toJson()
+        .spaces2
     }
 
     println {

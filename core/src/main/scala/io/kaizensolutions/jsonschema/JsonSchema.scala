@@ -5,9 +5,9 @@ sealed trait JsonSchema
 object JsonSchema {
   sealed trait Primitive extends JsonSchema { self =>
     def render: String = self match {
-      case Primitive.Str(_) => "string"
-      case Primitive.Bool   => "boolean"
-      case Primitive.Null   => "null"
+      case Primitive.Str(_, _) => "string"
+      case Primitive.Bool      => "boolean"
+      case Primitive.Null      => "null"
       case Primitive.Numeric(numericType, _, _) =>
         numericType match {
           case Primitive.NumericType.Int => "integer"
@@ -17,8 +17,13 @@ object JsonSchema {
   }
   object Primitive {
     // TODO: Model out further
-    final case class Str(constant: Option[String] = None) extends Primitive {
-      def withConstant(cst: String): Str = Str(Some(cst))
+    final case class Str(constant: Option[String] = None, lengthConstraint: Option[StrLengthConstraint] = None)
+        extends Primitive {
+      def withConstant(cst: String): Str = copy(constant = Some(cst))
+    }
+    final case class StrLengthConstraint(min: Option[Int], max: Option[Int]) { self =>
+      def normalize: Option[StrLengthConstraint] =
+        min.orElse(max).map(_ => self)
     }
 
     type Bool = Bool.type
@@ -29,7 +34,7 @@ object JsonSchema {
 
     final case class Numeric(
       numericType: NumericType,
-      rangeConstraints: Option[RangeConstraints],
+      rangeConstraints: Option[NumericRangeConstraints],
       multipleOf: Option[Double]
     ) extends Primitive { self =>
       def withMultipleOf(m: Double): Primitive = self.copy(multipleOf = Some(m))
@@ -41,13 +46,13 @@ object JsonSchema {
       final case object Num extends NumericType
     }
 
-    final case class RangeConstraints(
+    final case class NumericRangeConstraints(
       minimum: Option[Double],
       exclusiveMinimum: Option[Double],
       maximum: Option[Double],
       exclusiveMaximum: Option[Double]
     ) { self =>
-      def normalize: Option[RangeConstraints] =
+      def normalize: Option[NumericRangeConstraints] =
         minimum
           .orElse(exclusiveMinimum)
           .orElse(maximum)

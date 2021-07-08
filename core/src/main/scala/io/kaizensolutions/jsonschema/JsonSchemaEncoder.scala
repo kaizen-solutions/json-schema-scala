@@ -31,7 +31,7 @@ object JsonSchemaEncoder {
     simple[Boolean](JsonSchema.Primitive.Bool)
 
   implicit val stringJsonSchemaEncoder: JsonSchemaEncoder[String] =
-    simple[String](JsonSchema.Primitive.Str())
+    simple[String](JsonSchema.Primitive.Str(None, None))
 
   private def numericEncoder[A](numericType: JsonSchema.Primitive.NumericType): Typeclass[A] =
     simple[A](JsonSchema.Primitive.Numeric(numericType, None, None))
@@ -142,15 +142,25 @@ object JsonSchemaEncoder {
 
     private def applyConstraints(annotations: Seq[Any], schema: JsonSchema): JsonSchema =
       schema match {
-        case primitive: JsonSchema.Primitive.Numeric =>
-          primitive.copy(
+        case num: JsonSchema.Primitive.Numeric =>
+          num.copy(
             multipleOf = getMultipleOf(annotations),
             rangeConstraints = JsonSchema.Primitive
-              .RangeConstraints(
+              .NumericRangeConstraints(
                 minimum = getMinimum(annotations),
-                exclusiveMinimum = None,
+                exclusiveMinimum = getExclMinimum(annotations),
                 maximum = getMaximum(annotations),
-                exclusiveMaximum = None
+                exclusiveMaximum = getExclMaximum(annotations)
+              )
+              .normalize
+          )
+
+        case str: JsonSchema.Primitive.Str =>
+          str.copy(lengthConstraint =
+            JsonSchema.Primitive
+              .StrLengthConstraint(
+                min = getMinLength(annotations),
+                max = getMaxLength(annotations)
               )
               .normalize
           )
@@ -172,6 +182,26 @@ object JsonSchemaEncoder {
     private def getMaximum(in: Seq[Any]): Option[Double] =
       in.collectFirst {
         case e if e.isInstanceOf[annotations.maximum] => e.asInstanceOf[annotations.maximum].number
+      }
+
+    private def getMinLength(in: Seq[Any]): Option[Int] =
+      in.collectFirst {
+        case e if e.isInstanceOf[annotations.minimumLength] => e.asInstanceOf[annotations.minimumLength].number
+      }
+
+    private def getMaxLength(in: Seq[Any]): Option[Int] =
+      in.collectFirst {
+        case e if e.isInstanceOf[annotations.maximumLength] => e.asInstanceOf[annotations.maximumLength].number
+      }
+
+    private def getExclMinimum(in: Seq[Any]): Option[Double] =
+      in.collectFirst {
+        case e if e.isInstanceOf[annotations.exclusiveMinimum] => e.asInstanceOf[annotations.exclusiveMinimum].number
+      }
+
+    private def getExclMaximum(in: Seq[Any]): Option[Double] =
+      in.collectFirst {
+        case e if e.isInstanceOf[annotations.exclusiveMaximum] => e.asInstanceOf[annotations.exclusiveMaximum].number
       }
 
     private def getTitle(in: Seq[Any]): Option[String] =

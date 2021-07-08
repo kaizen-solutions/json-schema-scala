@@ -33,8 +33,14 @@ object circe {
       val init = List("type" := in.render)
 
       val additions = in match {
-        case Primitive.Str(constant) =>
-          constant.map("constant" := _).toList
+        case Primitive.Str(constant, lengthConstraint) =>
+          val constantC = constant.map("constant" := _).toList
+          val lengthC = lengthConstraint.map { cs =>
+            cs.min.map("minLength" := _).toList ++
+              cs.max.map("maxLength" := _).toList
+          }.getOrElse(Nil)
+
+          constantC ++ lengthC
 
         case Primitive.Numeric(_, rangeConstraints, multipleOf) =>
           val multipleC = multipleOf.map("multipleOf" := _).toList
