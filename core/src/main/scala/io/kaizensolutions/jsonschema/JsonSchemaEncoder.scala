@@ -15,47 +15,44 @@ trait JsonSchemaEncoder[A] {
 object JsonSchemaEncoder {
   def apply[A](implicit encoder: JsonSchemaEncoder[A]): JsonSchemaEncoder[A] = encoder
 
-  def simple[A](typeName: String): JsonSchemaEncoder[A] =
+  def simple[A](primType: JsonSchema.Primitive): JsonSchemaEncoder[A] =
     new JsonSchemaEncoder[A] {
       override def encode: JsonSchemaDocument =
         JsonSchemaDocument(
-          schema = JsonSchema.Primitive(typeName),
-          id = typeName
+          schema = primType,
+          id = primType.render
         )
     }
 
-  private val nullKey   = "null"
-  private val stringKey = "string"
-  private val boolKey   = "boolean"
-  private val intKey    = "integer"
-  private val numKey    = "number"
-
   implicit val nullSchemaEncoder: JsonSchemaEncoder[Null] =
-    simple[Null](nullKey)
+    simple[Null](JsonSchema.Primitive.Null)
 
   implicit val booleanSchemaEncoder: JsonSchemaEncoder[Boolean] =
-    simple[Boolean](boolKey)
+    simple[Boolean](JsonSchema.Primitive.Bool)
 
   implicit val stringJsonSchemaEncoder: JsonSchemaEncoder[String] =
-    simple[String](stringKey)
+    simple[String](JsonSchema.Primitive.Str())
+
+  private def numericEncoder[A](numericType: JsonSchema.Primitive.NumericType): Typeclass[A] =
+    simple[A](JsonSchema.Primitive.Numeric(numericType, None, None))
 
   implicit val intJsonSchemaEncoder: JsonSchemaEncoder[Int] =
-    simple[Int](intKey)
+    numericEncoder[Int](JsonSchema.Primitive.NumericType.Int)
 
   implicit val shortJsonSchemaEncoder: JsonSchemaEncoder[Short] =
-    simple[Short](numKey)
+    numericEncoder[Short](JsonSchema.Primitive.NumericType.Num)
 
   implicit val longJsonSchemaEncoder: JsonSchemaEncoder[Long] =
-    simple[Long](numKey)
+    numericEncoder[Long](JsonSchema.Primitive.NumericType.Num)
 
   implicit val doubleJsonSchemaEncoder: JsonSchemaEncoder[Double] =
-    simple[Double](numKey)
+    numericEncoder[Double](JsonSchema.Primitive.NumericType.Num)
 
   implicit val floatJsonSchemaEncoder: JsonSchemaEncoder[Float] =
-    simple[Float](numKey)
+    numericEncoder[Float](JsonSchema.Primitive.NumericType.Num)
 
   implicit val byteJsonSchemaEncoder: JsonSchemaEncoder[Byte] =
-    simple[Byte](numKey)
+    numericEncoder[Byte](JsonSchema.Primitive.NumericType.Num)
 
   implicit def optionJsonSchemaEncoder[A](implicit encoder: JsonSchemaEncoder[A]): JsonSchemaEncoder[Option[A]] =
     new JsonSchemaEncoder[Option[A]] {
@@ -79,17 +76,28 @@ object JsonSchemaEncoder {
       if (caseClass.isObject) {
         JsonSchemaDocument(
           id = caseClass.typeName.full,
-          schema = JsonSchema.Obj.CaseObj(Set(caseClass.typeName.short))
+          schema = JsonSchema.Obj.CaseObj(
+            Set(caseClass.typeName.short)
+          )
         )
       } else {
         val primitives: Seq[Labelled] =
           caseClass.parameters.collect {
             case param if param.typeclass.encode.isPrimitive =>
-              val description = getDescription(param.annotations)
-              val title       = getTitle(param.annotations)
-              val key         = param.label
-              val tcInstance  = param.typeclass
-              Labelled(key, tcInstance.encode.copy(description = description, title = title))
+              val description     = getDescription(param.annotations)
+              val title           = getTitle(param.annotations)
+              val key             = param.label
+              val tcInstance      = param.typeclass
+              val withConstraints = applyConstraints(param.annotations, tcInstance.encode.schema)
+
+              Labelled(
+                name = key,
+                document = tcInstance.encode.copy(
+                  description = description,
+                  title = title,
+                  schema = withConstraints
+                )
+              )
           }
 
         // converted nested objects to references
@@ -113,8 +121,8 @@ object JsonSchemaEncoder {
             case param if param.typeclass.encode.isObject =>
               val tc = param.typeclass
               val id = tc.encode.id
-              tc.encode.definitions +                                 // nested object definitions
-                Labelled(id, tc.encode.copy(definitions = Set.empty)) // nested object minus its old definitions
+              tc.encode.definitions +                                        // nested object definitions
+                Labelled(name = id, document = tc.encode.withoutDefinitions) // nested object minus its old definitions
           }.flatten.toSet
 
         val required =
@@ -125,11 +133,45 @@ object JsonSchemaEncoder {
 
         JsonSchemaDocument(
           id = caseClass.typeName.full,
-          schema = JsonSchema.Obj.Product(primitives ++ references, requiredKeys = required),
+          schema = JsonSchema.Obj.Product(caseClass.typeName.short, primitives ++ references, requiredKeys = required),
           title = getTitle(caseClass.annotations),
           description = getDescription(caseClass.annotations),
           definitions = definitions
         )
+      }
+
+    private def applyConstraints(annotations: Seq[Any], schema: JsonSchema): JsonSchema =
+      schema match {
+        case primitive: JsonSchema.Primitive.Numeric =>
+          primitive.copy(
+            multipleOf = getMultipleOf(annotations),
+            rangeConstraints = JsonSchema.Primitive
+              .RangeConstraints(
+                minimum = getMinimum(annotations),
+                exclusiveMinimum = None,
+                maximum = getMaximum(annotations),
+                exclusiveMaximum = None
+              )
+              .normalize
+          )
+
+        case ignore =>
+          ignore
+      }
+
+    private def getMultipleOf(in: Seq[Any]): Option[Double] =
+      in.collectFirst {
+        case e if e.isInstanceOf[annotations.multipleOf] => e.asInstanceOf[annotations.multipleOf].number
+      }
+
+    private def getMinimum(in: Seq[Any]): Option[Double] =
+      in.collectFirst {
+        case e if e.isInstanceOf[annotations.minimum] => e.asInstanceOf[annotations.minimum].number
+      }
+
+    private def getMaximum(in: Seq[Any]): Option[Double] =
+      in.collectFirst {
+        case e if e.isInstanceOf[annotations.maximum] => e.asInstanceOf[annotations.maximum].number
       }
 
     private def getTitle(in: Seq[Any]): Option[String] =
@@ -147,32 +189,55 @@ object JsonSchemaEncoder {
     def aggregatedCaseObjects: Seq[JsonSchemaDocument] =
       sealedTrait.subtypes
         .map(_.typeclass.encode.schema)
-        .collect { case c @ JsonSchema.Obj.CaseObj(_) => c }
+        .collect { case c @ JsonSchema.Obj.CaseObj(_, _) => c }
         .reduceOption(_ ++ _)
-        .map(cObj => JsonSchemaDocument(id = sealedTrait.typeName.full, schema = cObj))
+        .map(cObj =>
+          JsonSchemaDocument(
+            id = sealedTrait.typeName.full,
+            schema = cObj.copy(belongsToSum = Some(sealedTrait.typeName.full))
+          )
+        )
         .toSeq
 
-    def nonCaseObjects: Seq[JsonSchemaDocument] =
+    def nonCaseObjects: Seq[(JsonSchemaDocument, Set[Labelled])] =
       sealedTrait.subtypes
         .filterNot(_.typeclass.encode.isCaseObject)
         .map { term =>
-          val tc = term.typeclass
-          JsonSchemaDocument(
-            id = term.typeName.full,
-            schema = tc.encode.schema
+          // if this is not a case object then a term of a sum type has to be a case class
+          // this means we need to turn them into refs and add their properties as definitions
+          val orig = term.typeclass.encode
+          val ref  = JsonSchema.Reference(orig.id)
+          val doc  = JsonSchemaDocument(schema = ref, id = orig.id)
+          val definitions = orig.definitions + Labelled(
+            name = orig.id,
+            document = orig
+              .belongsTo(sealedTrait.typeName.full)
+              .withoutDefinitions
           )
+          (doc, definitions)
         }
 
     override def encode: JsonSchemaDocument = {
-      val definitions =
-        sealedTrait.subtypes.flatMap { term =>
-          term.typeclass.encode.definitions
-        }.toSet
+      val caseObjectsSchemaDoc: Seq[JsonSchemaDocument] =
+        aggregatedCaseObjects
+
+      val (
+        nonCaseObjectsSchemaDoc: Seq[JsonSchemaDocument],
+        nonCaseObjectsDefinitions: Set[Labelled]
+      ) = {
+        nonCaseObjects.foldLeft((Seq.empty[JsonSchemaDocument], Set.empty[Labelled])) {
+          case ((accSchema, accDefs), (schema, defs)) =>
+            (schema +: accSchema, defs ++ accDefs)
+        }
+      }
 
       JsonSchemaDocument(
         id = sealedTrait.typeName.full,
-        schema = JsonSchema.Obj.Sum(nonCaseObjects ++ aggregatedCaseObjects),
-        definitions = definitions
+        schema = JsonSchema.Obj.Sum(
+          typeName = sealedTrait.typeName.short,
+          terms = nonCaseObjectsSchemaDoc ++ caseObjectsSchemaDoc
+        ),
+        definitions = nonCaseObjectsDefinitions
       )
     }
   }
