@@ -1,8 +1,8 @@
-package io.kaizensolutions.jsonschema
+package io.kaizensolutions.jsonschema.annotations
 
 import scala.annotation.StaticAnnotation
 
-package object annotations {
+object Annotations {
   // General
   final case class comment(text: String)     extends StaticAnnotation
   final case class description(text: String) extends StaticAnnotation
