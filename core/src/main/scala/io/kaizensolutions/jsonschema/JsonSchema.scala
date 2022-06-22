@@ -27,10 +27,10 @@ object JsonSchema {
     }
 
     type Bool = Bool.type
-    final case object Bool extends Primitive
+    case object Bool extends Primitive
 
     type Null = Null.type
-    final case object Null extends Primitive
+    case object Null extends Primitive
 
     final case class Numeric(
       numericType: NumericType,
@@ -42,8 +42,8 @@ object JsonSchema {
 
     sealed trait NumericType
     object NumericType {
-      final case object Int extends NumericType
-      final case object Num extends NumericType
+      case object Int extends NumericType
+      case object Num extends NumericType
     }
 
     final case class NumericRangeConstraints(
@@ -75,7 +75,7 @@ object JsonSchema {
       requiredKeys: Seq[String],
       additionalProperties: Boolean = true,
       belongsToSum: Option[String] = None
-    )                                                                      extends Obj
+    ) extends Obj
     final case class Sum(typeName: String, terms: Seq[JsonSchemaDocument]) extends Obj
   }
 

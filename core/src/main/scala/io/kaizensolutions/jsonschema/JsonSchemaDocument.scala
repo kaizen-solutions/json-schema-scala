@@ -3,12 +3,18 @@ package io.kaizensolutions.jsonschema
 /**
  * A pure datatype that describes a JSON Schema in Scala
  *
- * @param schema is the type of schema (i.e. string, int, boolean, object, etc.)
- * @param id is the id of the JSON Schema document
- * @param title is the title of the JSON Schema document
- * @param description is the description of the JSON Schema document
- * @param definitions contains any data types defined by the JSON Schema
- * @param required are a list of all the required fields
+ * @param schema
+ *   is the type of schema (i.e. string, int, boolean, object, etc.)
+ * @param id
+ *   is the id of the JSON Schema document
+ * @param title
+ *   is the title of the JSON Schema document
+ * @param description
+ *   is the description of the JSON Schema document
+ * @param definitions
+ *   contains any data types defined by the JSON Schema
+ * @param required
+ *   are a list of all the required fields
  */
 final case class JsonSchemaDocument(
   schema: JsonSchema,
@@ -122,16 +128,4 @@ final case class JsonSchemaDocument(
       .transformDown(change)
       .copy(definitions = definitions.map(_.mapSchema(_.transformDown(change))))
   }
-
-  override def toString: String =
-    self.productElementNames
-      .zip(self.productIterator)
-      .map { case (key, value) =>
-        s"\t$key=$value"
-      }
-      .mkString(
-        start = "JsonSchemaPayload(" + System.lineSeparator(),
-        sep = "," + System.lineSeparator(),
-        end = System.lineSeparator + ")"
-      )
 }

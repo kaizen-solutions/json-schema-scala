@@ -5,6 +5,8 @@ import io.circe.syntax._
 import io.kaizensolutions.jsonschema.JsonSchema.Primitive
 import io.kaizensolutions.jsonschema._
 
+import scala.annotation.nowarn
+
 object circe {
   implicit class CirceJsonSyntax(in: JsonSchemaDocument) {
     def toJson(schemaVersion: SchemaVersion = SchemaVersion.Draft7): Json = Json.fromFields(render(in, schemaVersion))
@@ -71,7 +73,7 @@ object circe {
             key -> Json.fromFields(render(document = value, schemaVersion = schemaVersion, topLevel = false))
           }
         ),
-        "required" := in.requiredKeys,
+        "required"             := in.requiredKeys,
         "additionalProperties" := in.additionalProperties
       )
 
@@ -92,17 +94,18 @@ object circe {
 
     def renderArr(in: JsonSchema.Arr): Seq[(String, Json)] =
       List(
-        "type" := "array",
+        "type"  := "array",
         "items" := Json.fromFields(render(in.itemsRep, schemaVersion, topLevel = false))
       )
 
+    @nowarn
     def renderDefinition(in: Labelled): (String, Json) =
       in.name -> Json.fromFields(
         ("$id" := in.document.id) +: render(in.document, schemaVersion, topLevel = false)
       )
 
-    val id         = if (topLevel) Seq("$id" := document.id) else Seq.empty
-    val properties = renderSchema(document.schema)
+    @nowarn val id: Seq[(String, Json)] = if (topLevel) Seq("$id" := document.id) else Seq.empty
+    val properties                      = renderSchema(document.schema)
     val definitions =
       if (document.definitions.isEmpty) Seq.empty
       else Seq("definitions" := Json.fromFields(document.definitions.map(renderDefinition)))
