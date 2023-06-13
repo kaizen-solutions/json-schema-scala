@@ -80,7 +80,9 @@ final case class JsonSchemaDocument(
         terminalCase
 
       case p @ JsonSchema.Obj.Product(_, properties, _, _, _) =>
-        p.copy(properties = properties.map(_.mapSchema(_.transformDown(pf))))
+        p.copy(properties = properties.map(_.mapSchema { case document =>
+          document.transformDown(pf)
+        }))
 
       case s @ JsonSchema.Obj.Sum(_, terms) =>
         s.copy(terms = terms.map(_.transformDown(pf)))
@@ -102,7 +104,7 @@ final case class JsonSchemaDocument(
     // propagate change to definitions
     self
       .transformDown(change)
-      .copy(definitions = definitions.map(_.mapSchema(payload => payload.transformDown(change))))
+      .copy(definitions = definitions.map(_.mapSchema { case payload => payload.transformDown(change) }))
   }
 
   // I'm not really sure how I feel about this - maybe this needs to be first-class?
@@ -126,6 +128,6 @@ final case class JsonSchemaDocument(
 
     self
       .transformDown(change)
-      .copy(definitions = definitions.map(_.mapSchema(_.transformDown(change))))
+      .copy(definitions = definitions.map(_.mapSchema { case document => document.transformDown(change) }))
   }
 }
